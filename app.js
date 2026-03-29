@@ -1,9 +1,8 @@
-import express from "express";
-import WebSocket, { WebSocketServer } from "ws";
-import axios from "axios";
-import dotenv from "dotenv";
-
-dotenv.config();
+const express = require("express");
+const { WebSocketServer } = require("ws");
+const WebSocket = require("ws");
+const axios = require("axios");
+require("dotenv").config();
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
@@ -69,57 +68,3 @@ wss.on("connection", (ws) => {
   });
 });
 
-// GPT response
-async function getAIResponse(text) {
-  const res = await axios.post(
-    "https://api.openai.com/v1/chat/completions",
-    {
-      model: "gpt-4o-mini",
-      messages: [
-        {
-          role: "system",
-          content: `You are Emily, a young British pharmacy receptionist.
-
-Speak naturally like a human:
-- Use fillers like "yeah...", "okay...", "just a sec..."
-- Keep sentences short
-- Sound slightly busy but friendly
-- Never sound robotic`,
-        },
-        { role: "user", content: text },
-      ],
-      max_tokens: 50,
-      temperature: 0.7,
-    },
-    {
-      headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-      },
-    }
-  );
-
-  return res.data.choices[0].message.content;
-}
-
-// ElevenLabs TTS
-async function textToSpeech(text) {
-  const res = await axios.post(
-    `https://api.elevenlabs.io/v1/text-to-speech/${process.env.ELEVENLABS_VOICE_ID}`,
-    {
-      text,
-      model_id: "eleven_turbo_v2",
-      voice_settings: {
-        stability: 0.4,
-        similarity_boost: 0.8,
-      },
-    },
-    {
-      headers: {
-        "xi-api-key": process.env.ELEVENLABS_API_KEY,
-      },
-      responseType: "arraybuffer",
-    }
-  );
-
-  return Buffer.from(res.data).toString("base64");
-}
