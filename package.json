@@ -1,15 +1,1 @@
-{
-  "name": "pharmaai-voice",
-  "version": "1.0.0",
-  "main": "app.js",
-  "scripts": {
-    "start": "node app.js"
-  },
-  "dependencies": {
-    "express": "^4.18.2",
-    "ws": "^8.13.0",
-    "axios": "^1.6.0",
-    "dotenv": "^16.0.0"
-  }
-}
-
+{...} // Updated content for package.json
