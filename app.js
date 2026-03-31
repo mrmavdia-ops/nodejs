@@ -5,6 +5,7 @@ const OpenAI = require("openai");
 const fs = require("fs");
 const path = require("path");
 const axios = require("axios");
+const __dirname = path.resolve(); 
 
 const app = express();
 app.use(express.urlencoded({ extended: true });
