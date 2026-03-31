@@ -104,7 +104,7 @@ app.get("/tts/:file", (req, res) => {
 });
 
 // -------- TWILIO ENTRY --------
-app.post("/voice", (req, res) => {
+app.post("/incoming-call", (req, res) => {
   const twiml = new twilio.twiml.VoiceResponse();
 
   twiml.say("Hi… yeah, just a sec… you're through to the pharmacy… how can I help?");
