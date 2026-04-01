@@ -8,7 +8,7 @@ const axios = require("axios");
  
 
 const app = express();
-app.use(express.urlencoded({ extended: true });
+app.use(express.urlencoded({ extended: true }));
 
 // Serve audio files
 app.use("/audio", express.static("public/audio"));
@@ -89,7 +89,7 @@ async function getVoiceFromElevenLabs(text) {
     );
 
     const fileName = `audio_${Date.now()}.mp3`;
-    const filePath = path.join(__dirname, "public", fileName);
+    const filePath = path.join(__dirname, "public","audio" fileName);
 
     fs.writeFileSync(filePath, response.data);
 
