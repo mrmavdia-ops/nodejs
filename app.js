@@ -11,7 +11,7 @@ const app = express();
 app.use(express.urlencoded({ extended: true });
 
 // Serve audio files
-app.use("/audio", express.static("public"));
+app.use("/audio", express.static("public/audio"));
 
 // OpenAI setup
 const openai = new OpenAI({
