@@ -89,7 +89,7 @@ async function getVoiceFromElevenLabs(text) {
     );
 
     const fileName = `audio_${Date.now()}.mp3`;
-    const filePath = path.join(__dirname, "public","audio" fileName);
+    const filePath = path.join(__dirname, "public","audio", fileName);
 
     fs.writeFileSync(filePath, response.data);
 
