@@ -10,6 +10,7 @@ const app = express();
 app.use(express.urlencoded({ extended: true }));
 
 // Ensure audio folder exists
+
 const audioDir = path.join(__dirname, "public", "audio");
 if (!fs.existsSync(audioDir)) {
   fs.mkdirSync(audioDir, { recursive: true });
@@ -90,11 +91,17 @@ async function getVoiceFromElevenLabs(text) {
 
     fs.writeFileSync(filePath, response.data);
 
-    // 🔥 IMPORTANT delay so Twilio can access file
-    await new Promise(resolve => setTimeout(resolve, 500));
+    // 🔥 VERIFY FILE EXISTS
+    console.log("Saved file:", filePath);
+    console.log("Exists:", fs.existsSync(filePath));
 
-    const url = `${process.env.APP_BASE_URL}/audio/${fileName}`;
-    console.log("Audio URL:", url);
+    // 🔥 CRITICAL: longer delay for Render + Twilio
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    const baseUrl = process.env.APP_BASE_URL?.replace(/\/$/, "");
+    const url = `${baseUrl}/audio/${fileName}`;
+
+    console.log("FINAL AUDIO URL:", url);
 
     return url;
 
@@ -103,6 +110,7 @@ async function getVoiceFromElevenLabs(text) {
     return null;
   }
 }
+
 
 
 // ===== INCOMING CALL =====
