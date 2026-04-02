@@ -70,7 +70,7 @@ Never sound robotic.
 async function getVoiceFromElevenLabs(text) {
   try {
     const response = await axios.post(
-      `https://api.elevenlabs.io/v1/text-to-speech/${process.env.ELEVENLAB_VOICE_ID}`,
+      `https://api.elevenlabs.io/v1/text-to-speech/${process.env.ELEVENLABS_VOICE_ID}`,
       {
         text: text,
         model_id: "eleven_monolingual_v1",
@@ -81,7 +81,7 @@ async function getVoiceFromElevenLabs(text) {
       },
       {
         headers: {
-          "xi-api-key": process.env.ELEVENLAB_API_KEY,
+          "xi-api-key": process.env.ELEVENLABS_API_KEY,
           "Content-Type": "application/json"
         },
         responseType: "arraybuffer"
