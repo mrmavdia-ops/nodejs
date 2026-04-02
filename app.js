@@ -10,7 +10,6 @@ const app = express();
 app.use(express.urlencoded({ extended: true }));
 
 // Ensure audio folder exists
-
 const audioDir = path.join(__dirname, "public", "audio");
 if (!fs.existsSync(audioDir)) {
   fs.mkdirSync(audioDir, { recursive: true });
@@ -91,12 +90,10 @@ async function getVoiceFromElevenLabs(text) {
 
     fs.writeFileSync(filePath, response.data);
 
-    // 🔥 VERIFY FILE EXISTS
     console.log("Saved file:", filePath);
-    console.log("Exists:", fs.existsSync(filePath));
 
-    // 🔥 CRITICAL: longer delay for Render + Twilio
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    // Delay so Twilio can fetch
+    await new Promise(resolve => setTimeout(resolve, 1200));
 
     const baseUrl = process.env.APP_BASE_URL?.replace(/\/$/, "");
     const url = `${baseUrl}/audio/${fileName}`;
@@ -112,12 +109,9 @@ async function getVoiceFromElevenLabs(text) {
 }
 
 
-
 // ===== INCOMING CALL =====
 app.post("/voice", (req, res) => {
   const twiml = new twilio.twiml.VoiceResponse();
-
-  // ❌ REMOVED twiml.say()
 
   twiml.gather({
     input: "speech",
@@ -131,8 +125,25 @@ app.post("/voice", (req, res) => {
 });
 
 
-// ===== PROCESS SPEECH =====
-app.post("/process", async (req, res) => {
+// ===== STEP 1: FAST RESPONSE (NO TIMEOUT) =====
+app.post("/process", (req, res) => {
+  const twiml = new twilio.twiml.VoiceResponse();
+
+  console.log("---- PROCESS HIT ----");
+
+  // Quick human-like filler (prevents timeout)
+  twiml.say("Hmm... just a sec...");
+
+  // Redirect to real processing
+  twiml.redirect({ method: "POST" }, "/respond");
+
+  res.type("text/xml");
+  res.send(twiml.toString());
+});
+
+
+// ===== STEP 2: REAL AI + VOICE =====
+app.post("/respond", async (req, res) => {
   const twiml = new twilio.twiml.VoiceResponse();
 
   const userSpeech = req.body.SpeechResult || "Hello";
@@ -144,10 +155,10 @@ app.post("/process", async (req, res) => {
   const audioURL = await getVoiceFromElevenLabs(aiReply);
 
   if (audioURL) {
-    twiml.play(audioURL);   // ✅ ONLY THIS
+    twiml.play(audioURL);
   } else {
     console.log("FALLBACK TRIGGERED");
-    twiml.say(aiReply);     // fallback only
+    twiml.say(aiReply);
   }
 
   twiml.gather({
