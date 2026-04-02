@@ -5,13 +5,18 @@ const OpenAI = require("openai");
 const fs = require("fs");
 const path = require("path");
 const axios = require("axios");
- 
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 
+// Ensure audio folder exists
+const audioDir = path.join(__dirname, "public", "audio");
+if (!fs.existsSync(audioDir)) {
+  fs.mkdirSync(audioDir, { recursive: true });
+}
+
 // Serve audio files
-app.use("/audio", express.static("public/audio"));
+app.use("/audio", express.static(audioDir));
 
 // OpenAI setup
 const openai = new OpenAI({
@@ -40,20 +45,10 @@ Speak:
 - Short sentences
 - Friendly and slightly busy tone
 
-Help with:
-- Prescription status
-- Medicine availability
-- Appointments
-- Opening hours
-- General queries
-
 Never sound robotic.
           `
         },
-        {
-          role: "user",
-          content: prompt
-        }
+        { role: "user", content: prompt }
       ]
     });
 
@@ -69,6 +64,8 @@ Never sound robotic.
 // ===== ELEVENLABS VOICE =====
 async function getVoiceFromElevenLabs(text) {
   try {
+    console.log("Generating voice...");
+
     const response = await axios.post(
       `https://api.elevenlabs.io/v1/text-to-speech/${process.env.ELEVENLABS_VOICE_ID}`,
       {
@@ -89,14 +86,20 @@ async function getVoiceFromElevenLabs(text) {
     );
 
     const fileName = `audio_${Date.now()}.mp3`;
-    const filePath = path.join(__dirname, "public","audio", fileName);
+    const filePath = path.join(audioDir, fileName);
 
     fs.writeFileSync(filePath, response.data);
 
-    return `${process.env.APP_BASE_URL}/audio/${fileName}`;
+    // 🔥 IMPORTANT delay so Twilio can access file
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    const url = `${process.env.APP_BASE_URL}/audio/${fileName}`;
+    console.log("Audio URL:", url);
+
+    return url;
 
   } catch (err) {
-    console.error("ElevenLabs error:", err.message);
+    console.error("ElevenLabs error:", err.response?.data || err.message);
     return null;
   }
 }
@@ -106,7 +109,7 @@ async function getVoiceFromElevenLabs(text) {
 app.post("/voice", (req, res) => {
   const twiml = new twilio.twiml.VoiceResponse();
 
-  twiml.say("Hi… yeah, just a sec… you're through to the pharmacy… how can I help?");
+  // ❌ REMOVED twiml.say()
 
   twiml.gather({
     input: "speech",
@@ -127,19 +130,18 @@ app.post("/process", async (req, res) => {
   const userSpeech = req.body.SpeechResult || "Hello";
   console.log("User:", userSpeech);
 
-  // AI response
   const aiReply = await getAIResponse(userSpeech);
+  console.log("AI:", aiReply);
 
-  // Convert to human voice
   const audioURL = await getVoiceFromElevenLabs(aiReply);
 
   if (audioURL) {
-    twiml.play(audioURL);
+    twiml.play(audioURL);   // ✅ ONLY THIS
   } else {
-    twiml.say(aiReply); // fallback if ElevenLabs fails
+    console.log("FALLBACK TRIGGERED");
+    twiml.say(aiReply);     // fallback only
   }
 
-  // Continue conversation
   twiml.gather({
     input: "speech",
     action: "/process",
