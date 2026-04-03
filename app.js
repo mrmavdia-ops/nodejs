@@ -61,19 +61,20 @@ Never sound robotic.
 }
 
 
-// ===== ELEVENLABS VOICE =====
 async function getVoiceFromElevenLabs(text) {
   try {
     console.log("Generating voice...");
+    console.log("Voice ID:", process.env.ELEVENLABS_VOICE_ID);
 
     const response = await axios.post(
       `https://api.elevenlabs.io/v1/text-to-speech/${process.env.ELEVENLABS_VOICE_ID}`,
       {
         text: text,
-        model_id: "eleven_monolingual_v1",
+        model_id: "eleven_turbo_v2", // ✅ faster & better
+        output_format: "mp3_44100_128", // ✅ important for Twilio
         voice_settings: {
-          stability: 0.35,
-          similarity_boost: 0.75
+          stability: 0.4,
+          similarity_boost: 0.85
         }
       },
       {
@@ -81,9 +82,16 @@ async function getVoiceFromElevenLabs(text) {
           "xi-api-key": process.env.ELEVENLABS_API_KEY,
           "Content-Type": "application/json"
         },
-        responseType: "arraybuffer"
+        responseType: "arraybuffer",
+        timeout: 10000
       }
     );
+
+    // 🚨 CHECK RESPONSE
+    if (!response.data || response.data.length === 0) {
+      console.log("❌ Empty audio response");
+      return null;
+    }
 
     const fileName = `audio_${Date.now()}.mp3`;
     const filePath = path.join(audioDir, fileName);
@@ -91,9 +99,10 @@ async function getVoiceFromElevenLabs(text) {
     fs.writeFileSync(filePath, response.data);
 
     console.log("Saved file:", filePath);
+    console.log("File size:", response.data.length);
 
-    // Delay so Twilio can fetch
-    await new Promise(resolve => setTimeout(resolve, 1200));
+    // ⏳ Give Twilio time
+    await new Promise(resolve => setTimeout(resolve, 1500));
 
     const baseUrl = process.env.APP_BASE_URL?.replace(/\/$/, "");
     const url = `${baseUrl}/audio/${fileName}`;
@@ -103,11 +112,11 @@ async function getVoiceFromElevenLabs(text) {
     return url;
 
   } catch (err) {
-    console.error("ElevenLabs error:", err.response?.data || err.message);
+    console.error("❌ ElevenLabs error:");
+    console.error(err.response?.data || err.message);
     return null;
   }
 }
-
 
 // ===== INCOMING CALL =====
 app.post("/voice", async (req, res) => {
