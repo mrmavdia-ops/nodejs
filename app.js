@@ -112,7 +112,14 @@ async function getVoiceFromElevenLabs(text) {
 // ===== INCOMING CALL =====
 app.post("/voice", (req, res) => {
   const twiml = new twilio.twiml.VoiceResponse();
-twiml.say("Hi... how can i help");
+const greeting = "Hi...its Emma lloyds Pharmacy how can i help";
+  const audioURL = await getVoiceFromEleveblabs(greeting);
+  if (audioURL){
+    twiml.play(audioURL);
+  } else {
+    twiml.say(greeting);
+  }
+  
   twiml.gather({
     input: "speech",
     action: "/process",
