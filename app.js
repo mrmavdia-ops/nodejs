@@ -112,7 +112,7 @@ async function getVoiceFromElevenLabs(text) {
 // ===== INCOMING CALL =====
 app.post("/voice", (req, res) => {
   const twiml = new twilio.twiml.VoiceResponse();
-
+twiml.say("Hi... how can i help");
   twiml.gather({
     input: "speech",
     action: "/process",
@@ -126,41 +126,38 @@ app.post("/voice", (req, res) => {
 
 
 // ===== STEP 1: FAST RESPONSE (NO TIMEOUT) =====
-app.post("/process", (req, res) => {
+app.post("/process", async (req, res) => {
   const twiml = new twilio.twiml.VoiceResponse();
 
   console.log("---- PROCESS HIT ----");
 
-  // Quick human-like filler (prevents timeout)
-  twiml.say("Hmm... just a sec...");
-
-  // Redirect to real processing
-  twiml.redirect({ method: "POST" }, "/respond");
-
-  res.type("text/xml");
-  res.send(twiml.toString());
-});
-
-
-// ===== STEP 2: REAL AI + VOICE =====
-app.post("/respond", async (req, res) => {
-  const twiml = new twilio.twiml.VoiceResponse();
-
-  const userSpeech = req.body.SpeechResult || "Hello";
+  const userSpeech = req.body.SpeechResult || "";
   console.log("User:", userSpeech);
 
-  const aiReply = await getAIResponse(userSpeech);
-  console.log("AI:", aiReply);
+  // If no speech → ask again
+  if (!userSpeech) {
+    twiml.say("Sorry... I didn't catch that...");
+    twiml.gather({
+      input: "speech",
+      action: "/process",
+      method: "POST",
+      speechTimeout: "auto"
+    });
 
+    return res.type("text/xml").send(twiml.toString());
+  }
+
+  // 🔥 AI + Voice
+  const aiReply = await getAIResponse(userSpeech);
   const audioURL = await getVoiceFromElevenLabs(aiReply);
 
   if (audioURL) {
     twiml.play(audioURL);
   } else {
-    console.log("FALLBACK TRIGGERED");
     twiml.say(aiReply);
   }
 
+  // Continue conversation
   twiml.gather({
     input: "speech",
     action: "/process",
@@ -171,7 +168,6 @@ app.post("/respond", async (req, res) => {
   res.type("text/xml");
   res.send(twiml.toString());
 });
-
 
 // ===== START SERVER =====
 const PORT = process.env.PORT || 3000;
