@@ -1,3 +1,15 @@
+ None selected 
+
+Skip to content
+Using Gmail with screen readers
+1 of 1,006
+(no subject)
+Inbox
+
+Muhammad Mavdia <mmmavdia@gmail.com>
+6:57 PM (1 hour ago)
+to me
+
 require("dotenv").config();
 const express = require("express");
 const twilio = require("twilio");
@@ -9,73 +21,77 @@ const axios = require("axios");
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 
-// ===== AUDIO DIRECTORY FIX =====
+// ===== AUDIO DIRECTORY =====
 const audioDir = path.join(__dirname, "public", "audio");
 if (!fs.existsSync(audioDir)) {
   fs.mkdirSync(audioDir, { recursive: true });
 }
 
-// Serve audio files
 app.use("/audio", express.static(audioDir));
 
-// ===== OPENAI SETUP =====
+// ===== OPENAI =====
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// ===== TWILIO SMS SETUP =====
+// ===== TWILIO =====
 const client = twilio(
   process.env.TWILIO_ACCOUNT_SID,
   process.env.TWILIO_AUTH_TOKEN
 );
 
-async function sendSMS(to, message) {
-  try {
-    await client.messages.create({
-      body: message,
-      from: process.env.TWILIO_PHONE_NUMBER,
-      to: to
-    });
-    console.log("✅ SMS sent");
-  } catch (err) {
-    console.error("❌ SMS error:", err.message);
-  }
-}
-
-// ===== HEALTH CHECK =====
+// ===== HEALTH =====
 app.get("/health", (req, res) => {
   res.send("OK");
 });
+
+
+// ===== SYSTEM PROMPT (YOUR LOGIC - OPTIMISED) =====
+const SYSTEM_PROMPT = `
+You are the Receptionist for Lloyds Pharmacy, Oldham.
+
+Handle calls independently. Reduce staff interruptions.
+
+Speak:
+- Natural British tone
+- Short responses (max 1–2 sentences)
+- Slightly busy, human
+
+Rules:
+- NEVER ask for phone number
+- Caller is already identified
+- Do NOT repeat greetings
+- Minimise transfers
+- Offer SMS whenever useful
+
+Behaviour:
+- Handle prescriptions, delivery, stock, hours, services
+- If unsure: "Yeah... just a sec... let me check that"
+
+Prescription status:
+- pending → "Your prescription is still being prepared."
+- ready → "Your prescription is ready for collection."
+- delivery → "Your prescription will be delivered shortly."
+
+If caller insists on staff:
+Ask once → offer help
+Ask twice → offer SMS
+Third time → allow transfer
+
+Never give medical advice.
+Never sound robotic.
+`;
+
 
 // ===== AI RESPONSE =====
 async function getAIResponse(prompt) {
   try {
     const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
+      temperature: 0.6,
+      max_tokens: 60,
       messages: [
-        {
-          role: "system",
-          content: `
-You are Emily, a real receptionist at a busy UK pharmacy.
-
-You are speaking on a PHONE CALL.
-
-Style:
-- Natural, casual
-- Short sentences
-- Slightly busy tone
-- Use fillers: "yeah...", "okay...", "just a sec..."
-- Use pauses "..."
-- Never sound like AI
-
-Examples:
-"Yeah... just a sec... yeah it's ready."
-"Okay... we do have that in stock."
-"Hmm... let me check that..."
-
-Keep replies under 2 sentences.
-          `
-        },
+        { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: prompt }
       ]
     });
@@ -83,20 +99,19 @@ Keep replies under 2 sentences.
     return response.choices[0].message.content;
 
   } catch (err) {
-    console.error("❌ AI error:", err.message);
-    return "Sorry... just a sec...";
+    console.error("AI error:", err.message);
+    return "Yeah... just a sec...";
   }
 }
 
-// ===== ELEVENLABS VOICE =====
+
+// ===== ELEVENLABS =====
 async function getVoiceFromElevenLabs(text) {
   try {
-    console.log("🎤 Generating voice...");
-
     const response = await axios.post(
       `https://api.elevenlabs.io/v1/text-to-speech/${process.env.ELEVENLABS_VOICE_ID}`,
       {
-        text: text,
+        text,
         model_id: "eleven_turbo_v2",
         output_format: "mp3_44100_128",
         voice_settings: {
@@ -110,43 +125,46 @@ async function getVoiceFromElevenLabs(text) {
           "Content-Type": "application/json"
         },
         responseType: "arraybuffer",
-        timeout: 10000
+        timeout: 8000
       }
     );
-
-    if (!response.data || response.data.length === 0) {
-      console.log("❌ Empty audio response");
-      return null;
-    }
 
     const fileName = `audio_${Date.now()}.mp3`;
     const filePath = path.join(audioDir, fileName);
 
     fs.writeFileSync(filePath, response.data);
 
-    // ⚡ Faster delay
-    await new Promise(resolve => setTimeout(resolve, 300));
-
     const baseUrl = process.env.APP_BASE_URL?.replace(/\/$/, "");
-    const url = `${baseUrl}/audio/${fileName}`;
-
-    console.log("🔊 Audio URL:", url);
-
-    return url;
+    return `${baseUrl}/audio/${fileName}`;
 
   } catch (err) {
-    console.error("❌ ElevenLabs error:");
-    console.error(err.response?.data || err.message);
+    console.error("ElevenLabs error:", err.message);
     return null;
   }
 }
 
-// ===== INCOMING CALL =====
+
+// ===== SEND SMS =====
+async function sendSMS(to, message) {
+  try {
+    await client.messages.create({
+      body: message,
+      from: process.env.TWILIO_PHONE_NUMBER,
+      to: to
+    });
+    console.log("SMS sent");
+  } catch (err) {
+    console.error("SMS error:", err.message);
+  }
+}
+
+
+// ===== VOICE ENTRY =====
 app.post("/voice", (req, res) => {
   const twiml = new twilio.twiml.VoiceResponse();
-
   const baseUrl = process.env.APP_BASE_URL?.replace(/\/$/, "");
 
+  // 🎤 INSTANT HUMAN GREETING
   twiml.play(`${baseUrl}/audio/greeting.mp3`);
 
   twiml.gather({
@@ -158,18 +176,18 @@ app.post("/voice", (req, res) => {
 
   res.type("text/xml");
   res.send(twiml.toString());
-});// ===== PROCESS SPEECH =====
+});
+
+
+// ===== PROCESS =====
 app.post("/process", async (req, res) => {
   const twiml = new twilio.twiml.VoiceResponse();
 
-  console.log("---- PROCESS HIT ----");
-
   const userSpeech = req.body.SpeechResult || "";
-  const callerNumber = req.body.From;
+  const caller = req.body.From;
 
   console.log("User:", userSpeech);
 
-  // If no speech
   if (!userSpeech) {
     twiml.say("Sorry... I didn't catch that...");
     twiml.gather({
@@ -182,27 +200,25 @@ app.post("/process", async (req, res) => {
     return res.type("text/xml").send(twiml.toString());
   }
 
-  // AI + Voice
+  // ⚡ FAST AI RESPONSE
   const aiReply = await getAIResponse(userSpeech);
-  const audioURL = await getVoiceFromElevenLabs(aiReply);
 
-  // 📩 SEND SMS
-  if (callerNumber) {
-    await sendSMS(
-      callerNumber,
-      `Hi, thanks for calling. ${aiReply}`
-    );
+  // ⚡ INSTANT SPEECH (NO DELAY)
+  twiml.say(aiReply);
+
+  // 🔥 BACKGROUND VOICE GENERATION
+  getVoiceFromElevenLabs(aiReply);
+
+  // 📩 SMS TRIGGER (example logic)
+  if (userSpeech.toLowerCase().includes("prescription")) {
+    setTimeout(() => {
+      sendSMS(
+        caller,
+        `Update: ${aiReply}`
+      );
+    }, 3000);
   }
 
-  // 🔊 PLAY VOICE
-  if (audioURL) {
-    twiml.play(audioURL);
-  } else {
-    console.log("⚠️ Fallback to Twilio voice");
-    twiml.say(aiReply);
-  }
-
-  // Continue conversation
   twiml.gather({
     input: "speech",
     action: "/process",
@@ -214,8 +230,24 @@ app.post("/process", async (req, res) => {
   res.send(twiml.toString());
 });
 
-// ===== START SERVER =====
+
+// ===== INCOMING SMS =====
+app.post("/sms", (req, res) => {
+  const twiml = new twilio.twiml.MessagingResponse();
+
+  const msg = req.body.Body;
+  console.log("Incoming SMS:", msg);
+
+  twiml.message("Thanks, we’ll update you shortly.");
+
+  res.type("text/xml");
+  res.send(twiml.toString());
+});
+
+
+// ===== START =====
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("🚀 Server running on port " + PORT);
+  console.log("Server running on port " + PORT);
 });
+
