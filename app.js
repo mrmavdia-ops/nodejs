@@ -145,8 +145,9 @@ async function getVoiceFromElevenLabs(text) {
 app.post("/voice", (req, res) => {
   const twiml = new twilio.twiml.VoiceResponse();
 
-  // ❌ NO ROBOTIC VOICE
-  twiml.pause({ length: 1 });
+  const baseUrl = process.env.APP_BASE_URL?.replace(/\/$/, "");
+
+  twiml.play(`${baseUrl}/audio/greeting.mp3`);
 
   twiml.gather({
     input: "speech",
@@ -157,9 +158,7 @@ app.post("/voice", (req, res) => {
 
   res.type("text/xml");
   res.send(twiml.toString());
-});
-
-// ===== PROCESS SPEECH =====
+});// ===== PROCESS SPEECH =====
 app.post("/process", async (req, res) => {
   const twiml = new twilio.twiml.VoiceResponse();
 
