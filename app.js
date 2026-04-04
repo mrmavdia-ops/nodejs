@@ -9,7 +9,7 @@ const axios = require("axios");
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 
-// Ensure audio folder exists
+// ===== AUDIO DIRECTORY FIX =====
 const audioDir = path.join(__dirname, "public", "audio");
 if (!fs.existsSync(audioDir)) {
   fs.mkdirSync(audioDir, { recursive: true });
@@ -18,16 +18,34 @@ if (!fs.existsSync(audioDir)) {
 // Serve audio files
 app.use("/audio", express.static(audioDir));
 
-// OpenAI setup
+// ===== OPENAI SETUP =====
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Health check
+// ===== TWILIO SMS SETUP =====
+const client = twilio(
+  process.env.TWILIO_ACCOUNT_SID,
+  process.env.TWILIO_AUTH_TOKEN
+);
+
+async function sendSMS(to, message) {
+  try {
+    await client.messages.create({
+      body: message,
+      from: process.env.TWILIO_PHONE_NUMBER,
+      to: to
+    });
+    console.log("✅ SMS sent");
+  } catch (err) {
+    console.error("❌ SMS error:", err.message);
+  }
+}
+
+// ===== HEALTH CHECK =====
 app.get("/health", (req, res) => {
   res.send("OK");
 });
-
 
 // ===== AI RESPONSE =====
 async function getAIResponse(prompt) {
@@ -38,14 +56,24 @@ async function getAIResponse(prompt) {
         {
           role: "system",
           content: `
-You are Emily, a young British pharmacy receptionist.
+You are Emily, a real receptionist at a busy UK pharmacy.
 
-Speak:
-- Natural, casual, human
+You are speaking on a PHONE CALL.
+
+Style:
+- Natural, casual
 - Short sentences
-- Friendly and slightly busy tone
+- Slightly busy tone
+- Use fillers: "yeah...", "okay...", "just a sec..."
+- Use pauses "..."
+- Never sound like AI
 
-Never sound robotic.
+Examples:
+"Yeah... just a sec... yeah it's ready."
+"Okay... we do have that in stock."
+"Hmm... let me check that..."
+
+Keep replies under 2 sentences.
           `
         },
         { role: "user", content: prompt }
@@ -55,23 +83,22 @@ Never sound robotic.
     return response.choices[0].message.content;
 
   } catch (err) {
-    console.error("AI error:", err.message);
-    return "Sorry… just a second… something went wrong.";
+    console.error("❌ AI error:", err.message);
+    return "Sorry... just a sec...";
   }
 }
 
-
+// ===== ELEVENLABS VOICE =====
 async function getVoiceFromElevenLabs(text) {
   try {
-    console.log("Generating voice...");
-    console.log("Voice ID:", process.env.ELEVENLABS_VOICE_ID);
+    console.log("🎤 Generating voice...");
 
     const response = await axios.post(
       `https://api.elevenlabs.io/v1/text-to-speech/${process.env.ELEVENLABS_VOICE_ID}`,
       {
         text: text,
-        model_id: "eleven_turbo_v2", // ✅ faster & better
-        output_format: "mp3_44100_128", // ✅ important for Twilio
+        model_id: "eleven_turbo_v2",
+        output_format: "mp3_44100_128",
         voice_settings: {
           stability: 0.4,
           similarity_boost: 0.85
@@ -87,7 +114,6 @@ async function getVoiceFromElevenLabs(text) {
       }
     );
 
-    // 🚨 CHECK RESPONSE
     if (!response.data || response.data.length === 0) {
       console.log("❌ Empty audio response");
       return null;
@@ -98,16 +124,13 @@ async function getVoiceFromElevenLabs(text) {
 
     fs.writeFileSync(filePath, response.data);
 
-    console.log("Saved file:", filePath);
-    console.log("File size:", response.data.length);
-
-    // ⏳ Give Twilio time
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    // ⚡ Faster delay
+    await new Promise(resolve => setTimeout(resolve, 300));
 
     const baseUrl = process.env.APP_BASE_URL?.replace(/\/$/, "");
     const url = `${baseUrl}/audio/${fileName}`;
 
-    console.log("FINAL AUDIO URL:", url);
+    console.log("🔊 Audio URL:", url);
 
     return url;
 
@@ -119,11 +142,12 @@ async function getVoiceFromElevenLabs(text) {
 }
 
 // ===== INCOMING CALL =====
-app.post("/voice", async (req, res) => {
+app.post("/voice", (req, res) => {
   const twiml = new twilio.twiml.VoiceResponse();
-  twiml.say("hi, its emma lloyds pharmacy")
-  
-  
+
+  // ❌ NO ROBOTIC VOICE
+  twiml.pause({ length: 1 });
+
   twiml.gather({
     input: "speech",
     action: "/process",
@@ -135,17 +159,18 @@ app.post("/voice", async (req, res) => {
   res.send(twiml.toString());
 });
 
-
-// ===== STEP 1: FAST RESPONSE (NO TIMEOUT) =====
+// ===== PROCESS SPEECH =====
 app.post("/process", async (req, res) => {
   const twiml = new twilio.twiml.VoiceResponse();
 
   console.log("---- PROCESS HIT ----");
 
   const userSpeech = req.body.SpeechResult || "";
+  const callerNumber = req.body.From;
+
   console.log("User:", userSpeech);
 
-  // If no speech → ask again
+  // If no speech
   if (!userSpeech) {
     twiml.say("Sorry... I didn't catch that...");
     twiml.gather({
@@ -158,13 +183,23 @@ app.post("/process", async (req, res) => {
     return res.type("text/xml").send(twiml.toString());
   }
 
-  // 🔥 AI + Voice
+  // AI + Voice
   const aiReply = await getAIResponse(userSpeech);
   const audioURL = await getVoiceFromElevenLabs(aiReply);
 
+  // 📩 SEND SMS
+  if (callerNumber) {
+    await sendSMS(
+      callerNumber,
+      `Hi, thanks for calling. ${aiReply}`
+    );
+  }
+
+  // 🔊 PLAY VOICE
   if (audioURL) {
     twiml.play(audioURL);
   } else {
+    console.log("⚠️ Fallback to Twilio voice");
     twiml.say(aiReply);
   }
 
@@ -183,5 +218,5 @@ app.post("/process", async (req, res) => {
 // ===== START SERVER =====
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("Server running on port " + PORT);
+  console.log("🚀 Server running on port " + PORT);
 });
