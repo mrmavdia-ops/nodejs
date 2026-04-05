@@ -55,7 +55,7 @@ Rules:
 
 Behaviour:
 - Handle prescriptions, delivery, stock, hours, services
-- If unsure: "Yeah... just a sec... let me check that"
+- If unsure or use fillers like : "Yeah... just a sec... let me check that"
 
 Prescription status:
 - pending → "Your prescription is still being prepared."
@@ -193,10 +193,7 @@ app.post("/process", async (req, res) => {
   const aiReply = await getAIResponse(userSpeech);
 
   // ⚡ INSTANT SPEECH (NO DELAY)
-  twiml.say({
-    Voice: "Polly.Amy",
-    language: "en-GB" },
-            aiReply
+  twiml.say(aiReply
            );
 
   // 🔥 BACKGROUND VOICE GENERATION
