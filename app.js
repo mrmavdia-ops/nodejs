@@ -78,7 +78,7 @@ async function getAIResponse(prompt) {
     const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.6,
-      max_tokens: 60,
+      max_tokens: 40,
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: prompt }
