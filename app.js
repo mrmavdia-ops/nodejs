@@ -193,7 +193,11 @@ app.post("/process", async (req, res) => {
   const aiReply = await getAIResponse(userSpeech);
 
   // ⚡ INSTANT SPEECH (NO DELAY)
-  twiml.say(aiReply);
+  twiml.say({
+    Voice: "Polly.Amy",
+    language: "en-GB" },
+            aiReply
+           );
 
   // 🔥 BACKGROUND VOICE GENERATION
   getVoiceFromElevenLabs(aiReply);
