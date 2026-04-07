@@ -2,9 +2,9 @@
   "name": "pharmaai-backend",
   "version": "1.0.0",
   "type": "module",
-  "main": "Server.js",
+  "main": "server.js",
   "scripts": {
-    "start": "node Server.js"
+    "start": "node server.js"
   },
   "engine": {
     "node": "18.x"
