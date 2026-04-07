@@ -4,7 +4,7 @@
   "type": "module",
   "main": "Server.js",
   "scripts": {
-    "start": "node Srver.js"
+    "start": "node Server.js"
   },
   "engine": {
     "node": "18.x"
