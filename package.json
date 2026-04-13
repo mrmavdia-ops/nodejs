@@ -7,7 +7,7 @@
     "start": "node server.cjs"
   },
   "dependencies": { 
-    "dotenv": "^16.0.0",
+    "dotenv": "^1.6.0",
     "@deepgram/sdk": "^3.5.0",
     "axios": "^1.6.0",
     "cron": "^2.3.3",
