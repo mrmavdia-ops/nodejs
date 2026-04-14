@@ -176,13 +176,19 @@ wss.on('connection', (ws, req) => {
           aiReply = "Your appointment is booked for tomorrow.";
 
           // SMS send
-          await twilioClient.messages.create({
+          if (process.env.TEST._PHONE_NUMBER && process.env.TWILIO_PHONE_NUMBER) {
+            TRY {
+              await twilioClient.messages.create({
             from: process.env.TWILIO_PHONE_NUMBER,
             to: process.env.TEST_PHONE_NUMBER,
             body: "ReceptX: Appointment confirmed for tomorrow."
           });
 
+        } catch (err)  { console.error.("SMS Failed:", err.message);
+          }
         } else {
+          console.log(" SMS skipped -missing env variables");
+        }
           // ===== OPENAI =====
           const completion = await openai.chat.completions.create({
             model: "gpt-4o-mini",
