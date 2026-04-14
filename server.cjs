@@ -1,3 +1,113 @@
+wss.on('connection', (ws) => {
+  console.log("🔌 Twilio connected");
+
+  let caller = null;
+  let hasResponded = false; // 🔥 prevent spam loop
+
+  ws.on('message', async (msg) => {
+    try {
+      const data = JSON.parse(msg);
+
+      // ===== CAPTURE CALLER =====
+      if (data.event === "start") {
+        caller = data.start.from;
+        console.log("📞 Caller:", caller);
+      }
+
+      // ===== HANDLE AUDIO =====
+      if (data.event === "media" && !hasResponded) {
+
+        hasResponded = true; // 🔥 only respond once (important)
+
+        // TEMP transcript (until Deepgram)
+        const transcript = "Book an appointment tomorrow";
+
+        console.log("User said:", transcript);
+
+        let aiReply = "";
+
+        // ===== BOOKING LOGIC =====
+        if (/book/i.test(transcript)) {
+          aiReply = "Your appointment is booked for tomorrow.";
+
+          const toNumber = caller || process.env.TEST_PHONE_NUMBER;
+
+          try {
+            await twilioClient.messages.create({
+              from: process.env.TWILIO_PHONE_NUMBER,
+              to: toNumber,
+              body: "ReceptX: Appointment confirmed for tomorrow."
+            });
+
+            console.log("📩 SMS sent to:", toNumber);
+
+          } catch (err) {
+            console.error("SMS Error:", err.message);
+          }
+
+        } else {
+          // ===== OPENAI =====
+          const completion = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            messages: [
+              {
+                role: "system",
+                content: "You are a polite UK pharmacy receptionist."
+              },
+              {
+                role: "user",
+                content: transcript
+              }
+            ]
+          });
+
+          aiReply = completion.choices[0].message.content;
+        }
+
+        console.log("AI:", aiReply);
+
+        // ===== ELEVENLABS STREAM =====
+        const response = await axios({
+          method: "POST",
+          url: `https://api.elevenlabs.io/v1/text-to-speech/${elevenVoiceId}/stream`,
+          data: {
+            text: aiReply,
+            model_id: "eleven_turbo_v2",
+            output_format: "ulaw_8000"
+          },
+          headers: {
+            "xi-api-key": elevenKey
+          },
+          responseType: "stream"
+        });
+
+        response.data.on("data", (chunk) => {
+          ws.send(JSON.stringify({
+            event: "media",
+            media: {
+              payload: chunk.toString("base64")
+            }
+          }));
+        });
+      }
+
+    } catch (err) {
+      console.error("Error:", err.message);
+    }
+  });
+
+  ws.on("close", () => {
+    console.log("❌ Disconnected");
+  });
+});
+
+// ===== START =====
+server.listen(PORT, () => {
+  console.log("Server running on port " + PORT);
+});
+
+On 14-Apr-2026, at 8:28 PM, Asad Zake <mmmavdia@gmail.com> wrote:
+
 require('dotenv').config();
 
 const express = require('express');
