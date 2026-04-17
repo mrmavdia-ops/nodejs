@@ -21,14 +21,33 @@ const twilioClient = twilio(
   process.env.TWILIO_AUTH_TOKEN
 );
 
-// ===== TEMP STORAGE =====
+// ===== TEMP DATABASE =====
 let bookings = [];
 let calls = [];
-let lastHandled = {}; // prevent duplicate SMS
+let lastHandled = {};
+
+// ===== BUSINESS CONFIG =====
+const businessConfigs = {
+  "restaurant_1": {
+    name: "Spice Grill",
+    type: "restaurant",
+    opening_hours: {
+      mon: ["09:00", "22:00"],
+      tue: ["09:00", "22:00"],
+      wed: ["09:00", "22:00"],
+      thu: ["09:00", "22:00"],
+      fri: ["09:00", "23:00"],
+      sat: ["10:00", "23:00"],
+      sun: ["10:00", "21:00"]
+    },
+    slot_duration: 30,
+    max_per_slot: 2
+  }
+};
 
 // ===== HEALTH =====
 app.get("/", (req, res) => {
-  res.send("ReceptX Backend Running 🚀");
+  res.send("ReceptX SaaS Running 🚀");
 });
 
 // =====================================================
@@ -36,77 +55,86 @@ app.get("/", (req, res) => {
 // =====================================================
 app.post("/api/vapi/webhook", async (req, res) => {
   try {
-    console.log("📥 VAPI WEBHOOK RECEIVED");
-    console.log(JSON.stringify(req.body, null, 2));
+    console.log("📥 VAPI:", JSON.stringify(req.body, null, 2));
 
-    // ===== EXTRACT DATA =====
+    // ===== EXTRACT CALLER =====
     const caller =
       req.body?.customer?.number ||
+      req.body?.call?.customer?.number ||
+      req.body?.call?.from ||
       req.body?.from ||
       null;
 
     const message =
-      req.body?.messages?.[req.body.messages.length - 1]?.content ||
-      "";
+      req.body?.messages?.slice(-1)[0]?.content || "";
 
-    const callId = req.body?.call?.id || "unknown";
+    const businessId =
+      req.body?.metadata?.business_id ||
+      req.body?.assistant?.metadata?.business_id ||
+      "restaurant_1";
 
-    console.log("📞 RAW CALLER:", caller);
-    console.log("🧠 Message:", message);
+    const business = businessConfigs[businessId];
 
-    if (!caller) {
-      console.log("❌ No caller found");
+    if (!caller || !business) {
+      console.log("❌ Missing caller/business");
       return res.sendStatus(200);
     }
 
-    // ===== NORMALIZE PHONE =====
     const phone = caller.startsWith("+") ? caller : `+${caller}`;
 
-    if (!phone || phone.length < 10) {
-      console.log("❌ Invalid phone:", phone);
+    // ===== DUPLICATE BLOCK =====
+    if (lastHandled[phone] && Date.now() - lastHandled[phone] < 8000) {
+      console.log("⏱️ Duplicate blocked");
       return res.sendStatus(200);
     }
-
-    // ===== PREVENT DUPLICATES =====
-    if (lastHandled[phone] && Date.now() - lastHandled[phone] < 10000) {
-      console.log("⏱️ Skipping duplicate request");
-      return res.sendStatus(200);
-    }
-
     lastHandled[phone] = Date.now();
 
+    console.log("📞 Caller:", phone);
+    console.log("🏢 Business:", business.name);
+    console.log("🧠 Message:", message);
+
     // =====================================================
-    // 🧠 INTENT DETECTION
+    // 🧠 INTENT
     // =====================================================
     let intent = "general";
 
-    if (/book|appointment|reserve/i.test(message)) {
-      intent = "booking";
-    }
-
-    if (/cancel/i.test(message)) {
-      intent = "cancel";
-    }
+    if (/book|appointment|reserve/i.test(message)) intent = "booking";
+    if (/cancel/i.test(message)) intent = "cancel";
 
     // =====================================================
-    // 📅 BOOKING
+    // 📅 BOOKING LOGIC WITH AVAILABILITY
     // =====================================================
     if (intent === "booking") {
+      const bookingTime = new Date(Date.now() + 60 * 60 * 1000); // temp: +1hr
+
+      if (!isWithinHours(bookingTime, business)) {
+        await sendSMS(phone, `${business.name}: We are closed at that time.`);
+        return res.sendStatus(200);
+      }
+
+      if (!isSlotAvailable(bookingTime, businessId, business)) {
+        await sendSMS(
+          phone,
+          `${business.name}: That time is fully booked. Please try another time.`
+        );
+        return res.sendStatus(200);
+      }
+
       const booking = {
         id: Date.now(),
+        business_id: businessId,
         phone,
-        message,
-        status: "confirmed",
-        created_at: new Date()
+        time: bookingTime,
+        status: "confirmed"
       };
 
       bookings.push(booking);
 
-      console.log("📅 Booking stored:", booking);
+      console.log("📅 Booking saved:", booking);
 
       await sendSMS(
         phone,
-        "ReceptX: Your appointment is confirmed. We’ll see you soon."
+        `${business.name}: Your booking is confirmed for ${bookingTime.toLocaleString("en-GB")}`
       );
     }
 
@@ -115,17 +143,13 @@ app.post("/api/vapi/webhook", async (req, res) => {
     // =====================================================
     if (intent === "cancel") {
       bookings = bookings.map((b) => {
-        if (b.phone === phone) {
-          b.status = "cancelled";
-        }
+        if (b.phone === phone) b.status = "cancelled";
         return b;
       });
 
-      console.log("❌ Booking cancelled for:", phone);
-
       await sendSMS(
         phone,
-        "ReceptX: Your appointment has been cancelled."
+        `${business.name}: Your booking has been cancelled.`
       );
     }
 
@@ -133,8 +157,8 @@ app.post("/api/vapi/webhook", async (req, res) => {
     // 📞 CALL LOG
     // =====================================================
     calls.push({
-      id: callId,
       phone,
+      business_id: businessId,
       message,
       created_at: new Date()
     });
@@ -142,7 +166,7 @@ app.post("/api/vapi/webhook", async (req, res) => {
     res.sendStatus(200);
 
   } catch (err) {
-    console.error("❌ Webhook error:", err.message);
+    console.error("❌ ERROR:", err);
     res.sendStatus(200);
   }
 });
@@ -151,29 +175,49 @@ app.post("/api/vapi/webhook", async (req, res) => {
 // 📊 DASHBOARD API
 // =====================================================
 app.get("/api/dashboard", (req, res) => {
-  res.json({
-    bookings,
-    calls,
-    stats: {
-      totalBookings: bookings.length,
-      totalCalls: calls.length
-    }
-  });
+  res.json({ bookings, calls });
 });
 
 // =====================================================
-// 📩 SMS FUNCTION (FINAL FIXED)
+// 📅 CHECK HOURS
+// =====================================================
+function isWithinHours(date, business) {
+  const day = ["sun","mon","tue","wed","thu","fri","sat"][date.getDay()];
+  const hours = business.opening_hours[day];
+
+  if (!hours) return false;
+
+  const [start, end] = hours;
+
+  const current = date.toTimeString().slice(0,5);
+
+  return current >= start && current <= end;
+}
+
+// =====================================================
+// 📅 SLOT CHECK
+// =====================================================
+function isSlotAvailable(time, businessId, business) {
+  const sameSlot = bookings.filter(
+    b =>
+      b.business_id === businessId &&
+      new Date(b.time).getTime() === new Date(time).getTime() &&
+      b.status === "confirmed"
+  );
+
+  return sameSlot.length < business.max_per_slot;
+}
+
+// =====================================================
+// 📩 SMS (FINAL FIXED)
 // =====================================================
 async function sendSMS(to, message) {
   try {
-    if (!to) {
-      console.log("❌ No 'to' number");
-      return;
-    }
+    if (!to) return;
 
     const phone = to.startsWith("+") ? to : `+${to}`;
 
-    console.log("📩 Sending SMS to:", phone);
+    console.log("📩 SMS →", phone);
 
     const sms = await twilioClient.messages.create({
       from: process.env.TWILIO_PHONE_NUMBER,
@@ -181,17 +225,16 @@ async function sendSMS(to, message) {
       body: message
     });
 
-    console.log("✅ SMS sent:", sms.sid);
+    console.log("✅ SMS:", sms.sid);
 
   } catch (err) {
-    console.error("❌ Twilio ERROR:", err.message);
+    console.error("❌ SMS ERROR:", err);
   }
 }
 
 // =====================================================
-// 🚀 START SERVER
+// 🚀 START
 // =====================================================
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
-
