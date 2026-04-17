@@ -1,19 +1,28 @@
 {
-  "name": "receptx-voice-ai",
+  "name": "receptx-backend",
   "version": "1.0.0",
+  "description": "ReceptX AI Receptionist Backend (Vapi + Twilio SaaS)",
   "main": "server.cjs",
+  "type": "commonjs",
+
   "scripts": {
-    "start": "node server.cjs"
+    "start": "node server.cjs",
+    "dev": "nodemon server.cjs"
   },
+
+  "engines": {
+    "node": ">=18"
+  },
+
   "dependencies": {
-    "@deepgram/sdk": "^3.0.0",
-    "axios": "^1.6.0",
     "dotenv": "^16.4.5",
     "express": "^4.18.2",
-    "openai": "^4.7.1",
     "twilio": "^4.16.2",
-    "ws": "^8.13.0"
+    "morgan": "^1.10.0",
+    "cors": "^2.8.5"
+  },
+
+  "devDependencies": {
+    "nodemon": "^3.0.3"
   }
 }
-
-
