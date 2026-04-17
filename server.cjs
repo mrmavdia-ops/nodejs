@@ -21,9 +21,10 @@ const twilioClient = twilio(
   process.env.TWILIO_AUTH_TOKEN
 );
 
-// ===== TEMP STORAGE (replace with DB later) =====
+// ===== TEMP STORAGE =====
 let bookings = [];
 let calls = [];
+let lastHandled = {}; // prevent duplicate SMS
 
 // ===== HEALTH =====
 app.get("/", (req, res) => {
@@ -31,14 +32,14 @@ app.get("/", (req, res) => {
 });
 
 // =====================================================
-// 📡 VAPI WEBHOOK (CORE SYSTEM)
+// 📡 VAPI WEBHOOK
 // =====================================================
 app.post("/api/vapi/webhook", async (req, res) => {
   try {
     console.log("📥 VAPI WEBHOOK RECEIVED");
     console.log(JSON.stringify(req.body, null, 2));
 
-    // ===== EXTRACT DATA SAFELY =====
+    // ===== EXTRACT DATA =====
     const caller =
       req.body?.customer?.number ||
       req.body?.from ||
@@ -50,16 +51,32 @@ app.post("/api/vapi/webhook", async (req, res) => {
 
     const callId = req.body?.call?.id || "unknown";
 
+    console.log("📞 RAW CALLER:", caller);
+    console.log("🧠 Message:", message);
+
     if (!caller) {
       console.log("❌ No caller found");
       return res.sendStatus(200);
     }
 
-    console.log("📞 Caller:", caller);
-    console.log("🧠 Message:", message);
+    // ===== NORMALIZE PHONE =====
+    const phone = caller.startsWith("+") ? caller : `+${caller}`;
+
+    if (!phone || phone.length < 10) {
+      console.log("❌ Invalid phone:", phone);
+      return res.sendStatus(200);
+    }
+
+    // ===== PREVENT DUPLICATES =====
+    if (lastHandled[phone] && Date.now() - lastHandled[phone] < 10000) {
+      console.log("⏱️ Skipping duplicate request");
+      return res.sendStatus(200);
+    }
+
+    lastHandled[phone] = Date.now();
 
     // =====================================================
-    // 🧠 SIMPLE INTENT DETECTION (CAN UPGRADE LATER)
+    // 🧠 INTENT DETECTION
     // =====================================================
     let intent = "general";
 
@@ -72,12 +89,12 @@ app.post("/api/vapi/webhook", async (req, res) => {
     }
 
     // =====================================================
-    // 📅 BOOKING LOGIC
+    // 📅 BOOKING
     // =====================================================
     if (intent === "booking") {
       const booking = {
         id: Date.now(),
-        phone: caller,
+        phone,
         message,
         status: "confirmed",
         created_at: new Date()
@@ -87,29 +104,28 @@ app.post("/api/vapi/webhook", async (req, res) => {
 
       console.log("📅 Booking stored:", booking);
 
-      // ===== SEND SMS =====
       await sendSMS(
-        caller,
-        "ReceptX: Your booking is confirmed. We look forward to seeing you."
+        phone,
+        "ReceptX: Your appointment is confirmed. We’ll see you soon."
       );
     }
 
     // =====================================================
-    // ❌ CANCEL LOGIC
+    // ❌ CANCEL
     // =====================================================
     if (intent === "cancel") {
       bookings = bookings.map((b) => {
-        if (b.phone === caller) {
+        if (b.phone === phone) {
           b.status = "cancelled";
         }
         return b;
       });
 
-      console.log("❌ Booking cancelled for:", caller);
+      console.log("❌ Booking cancelled for:", phone);
 
       await sendSMS(
-        caller,
-        "ReceptX: Your booking has been cancelled."
+        phone,
+        "ReceptX: Your appointment has been cancelled."
       );
     }
 
@@ -118,7 +134,7 @@ app.post("/api/vapi/webhook", async (req, res) => {
     // =====================================================
     calls.push({
       id: callId,
-      phone: caller,
+      phone,
       message,
       created_at: new Date()
     });
@@ -132,7 +148,7 @@ app.post("/api/vapi/webhook", async (req, res) => {
 });
 
 // =====================================================
-// 📊 DASHBOARD API (FOR LOVABLE FRONTEND)
+// 📊 DASHBOARD API
 // =====================================================
 app.get("/api/dashboard", (req, res) => {
   res.json({
@@ -146,25 +162,29 @@ app.get("/api/dashboard", (req, res) => {
 });
 
 // =====================================================
-// 📩 SMS FUNCTION (SAFE)
+// 📩 SMS FUNCTION (FINAL FIXED)
 // =====================================================
 async function sendSMS(to, message) {
-  if (!to) {
-    console.log("⚠️ SMS skipped (no number)");
-    return;
-  }
-
   try {
+    if (!to) {
+      console.log("❌ No 'to' number");
+      return;
+    }
+
+    const phone = to.startsWith("+") ? to : `+${to}`;
+
+    console.log("📩 Sending SMS to:", phone);
+
     const sms = await twilioClient.messages.create({
       from: process.env.TWILIO_PHONE_NUMBER,
-      to,
+      to: phone,
       body: message
     });
 
-    console.log("📩 SMS sent:", sms.sid);
+    console.log("✅ SMS sent:", sms.sid);
 
   } catch (err) {
-    console.error("❌ SMS error:", err.message);
+    console.error("❌ Twilio ERROR:", err.message);
   }
 }
 
